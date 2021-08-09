@@ -2580,6 +2580,12 @@ int ieee80211_put_he_cap(struct sk_buff *skb,
 	/* modify on stack first to calculate 'n' and 'ie_len' correctly */
 	ieee80211_get_adjusted_he_cap(conn, he_cap, &elem);
 
+	/* Apply overrides as needed. */
+	if (conn->conn_flags & IEEE80211_CONN_DISABLE_TWT) {
+		elem.mac_cap_info[0] &= ~(IEEE80211_HE_MAC_CAP0_TWT_REQ);
+		elem.mac_cap_info[0] &= ~(IEEE80211_HE_MAC_CAP0_TWT_RES);
+	}
+
 	n = ieee80211_he_mcs_nss_size(&elem);
 	ie_len = 2 + 1 +
 		 sizeof(he_cap->he_cap_elem) + n +
@@ -2818,7 +2824,8 @@ u8 *ieee80211_ie_build_vht_oper(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,
 	return pos + sizeof(struct ieee80211_vht_operation);
 }
 
-u8 *ieee80211_ie_build_he_oper(u8 *pos, struct cfg80211_chan_def *chandef)
+u8 *ieee80211_ie_build_he_oper(struct ieee80211_sub_if_data *sdata,
+			       u8 *pos, struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_he_operation *he_oper;
 	struct ieee80211_he_6ghz_oper *he_6ghz_op;
