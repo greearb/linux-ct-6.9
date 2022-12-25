@@ -66,9 +66,17 @@ static void ieee80211_send_addba_request(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
+	struct ieee80211_addba_ext_ie *addba_ext;
+	u8 *pos;
 	u16 capab;
+	bool amsdu = ieee80211_hw_check(&local->hw, SUPPORTS_AMSDU_IN_AMPDU);
 
-	skb = dev_alloc_skb(sizeof(*mgmt) + local->hw.extra_tx_headroom);
+	if (agg_size >= 1024)
+		skb = dev_alloc_skb(sizeof(*mgmt) +
+				    2 + sizeof(struct ieee80211_addba_ext_ie) +
+				    local->hw.extra_tx_headroom);
+	else
+		skb = dev_alloc_skb(sizeof(*mgmt) + local->hw.extra_tx_headroom);
 
 	if (!skb)
 		return;
@@ -105,6 +113,15 @@ static void ieee80211_send_addba_request(struct ieee80211_sub_if_data *sdata,
 	mgmt->u.action.u.addba_req.timeout = cpu_to_le16(timeout);
 	mgmt->u.action.u.addba_req.start_seq_num =
 					cpu_to_le16(start_seq_num << 4);
+
+	if (agg_size >= 1024 ) {
+		pos = skb_put_zero(skb, 2 + sizeof(struct ieee80211_addba_ext_ie));
+		*pos++ = WLAN_EID_ADDBA_EXT;
+		*pos++ = sizeof(struct ieee80211_addba_ext_ie);
+		addba_ext = (struct ieee80211_addba_ext_ie *)pos;
+		addba_ext->data = u8_encode_bits(agg_size >> IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT,
+						 IEEE80211_ADDBA_EXT_BUF_SIZE_MASK);
+	}
 
 	ieee80211_tx_skb_tid(sdata, skb, tid, -1);
 }
@@ -473,8 +490,11 @@ static void ieee80211_send_addba_with_timeout(struct sta_info *sta,
 	sta->ampdu_mlme.addba_req_num[tid]++;
 	spin_unlock_bh(&sta->lock);
 
-	if (sta->sta.deflink.he_cap.has_he) {
+	if (sta->sta.deflink.eht_cap.has_eht) {
 		buf_size = local->hw.max_tx_aggregation_subframes;
+	} else if (sta->sta.deflink.he_cap.has_he) {
+		buf_size = min_t(u16, local->hw.max_tx_aggregation_subframes,
+				 IEEE80211_MAX_AMPDU_BUF_HE);
 	} else {
 		/*
 		 * We really should use what the driver told us it will
@@ -972,8 +992,10 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 {
 	struct tid_ampdu_tx *tid_tx;
 	struct ieee80211_txq *txq;
+	struct ieee802_11_elems *elems;
 	u16 capab, tid, buf_size;
 	bool amsdu;
+	int ext_ie_len;
 
 	lockdep_assert_wiphy(sta->local->hw.wiphy);
 
@@ -981,6 +1003,26 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 	amsdu = capab & IEEE80211_ADDBA_PARAM_AMSDU_MASK;
 	tid = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_TID_MASK);
 	buf_size = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_BUF_SIZE_MASK);
+	ext_ie_len = len - offsetof(struct ieee80211_mgmt,
+				    u.action.u.addba_resp.variable);
+
+	if (ext_ie_len < 0)
+		goto next;
+
+	elems = ieee802_11_parse_elems(mgmt->u.action.u.addba_resp.variable,
+				       ext_ie_len, true, NULL);
+
+	if (elems && !elems->parse_error) {
+		if (sta->sta.deflink.eht_cap.has_eht && elems->addba_ext_ie) {
+			u8 buf_size_1k = u8_get_bits(elems->addba_ext_ie->data,
+						     IEEE80211_ADDBA_EXT_BUF_SIZE_MASK);
+			buf_size |= buf_size_1k << IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT;
+		}
+	}
+
+	if (elems)
+		kfree(elems);
+next:
 	buf_size = min(buf_size, local->hw.max_tx_aggregation_subframes);
 
 	txq = sta->sta.txq[tid];
