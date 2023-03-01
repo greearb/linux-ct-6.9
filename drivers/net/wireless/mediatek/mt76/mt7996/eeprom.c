@@ -6,6 +6,11 @@
 #include <linux/firmware.h>
 #include "mt7996.h"
 #include "eeprom.h"
+#include <linux/moduleparam.h>
+
+static bool testmode_enable;
+module_param(testmode_enable, bool, 0644);
+MODULE_PARM_DESC(testmode_enable, "Enable testmode");
 
 static int mt7996_check_eeprom(struct mt7996_dev *dev)
 {
@@ -24,6 +29,9 @@ static int mt7996_check_eeprom(struct mt7996_dev *dev)
 
 static char *mt7996_eeprom_name(struct mt7996_dev *dev)
 {
+	if (dev->testmode_enable)
+		return MT7996_EEPROM_DEFAULT_TM;
+
 	switch (mt76_chip(&dev->mt76)) {
 	case 0x7990:
 		return MT7996_EEPROM_DEFAULT;
@@ -60,12 +68,14 @@ out:
 	return ret;
 }
 
-static int mt7996_eeprom_load(struct mt7996_dev *dev)
+int mt7996_eeprom_check_fw_mode(struct mt7996_dev *dev)
 {
+	u8 *eeprom;
 	int ret;
 
 	mtk_dbg(&dev->mt76, CFG, "attemping eeprom-init.\n");
 
+	/* load eeprom in flash or bin file mode to determine fw mode */
 	ret = mt76_eeprom_init(&dev->mt76, MT7996_EEPROM_SIZE);
 	if (ret < 0) {
 		mtk_dbg(&dev->mt76, CFG, "eeprom-init had error: %d\n", ret);
@@ -74,11 +84,24 @@ static int mt7996_eeprom_load(struct mt7996_dev *dev)
 
 	if (ret) {
 		dev->flash_mode = true;
-	} else {
-		u8 free_block_num;
-		u32 block_num, i;
-		u32 eeprom_blk_size = MT7996_EEPROM_BLOCK_SIZE;
+		eeprom = dev->mt76.eeprom.data;
+		/* testmode enable priority: eeprom field > module parameter */
+		dev->testmode_enable = !mt7996_check_eeprom(dev) ? eeprom[MT_EE_TESTMODE_EN] :
+								   testmode_enable;
+	}
 
+	return ret;
+}
+
+static int mt7996_eeprom_load(struct mt7996_dev *dev)
+{
+	int ret;
+	u8 free_block_num;
+	u32 block_num, i;
+	u32 eeprom_blk_size = MT7996_EEPROM_BLOCK_SIZE;
+
+	/* flash or bin file mode eeprom is loaded before mcu init */
+	if (!dev->flash_mode) {
 		ret = mt7996_mcu_get_eeprom_free_block(dev, &free_block_num);
 		if (ret < 0)
 			return ret;
@@ -90,7 +113,7 @@ static int mt7996_eeprom_load(struct mt7996_dev *dev)
 		/* read eeprom data from efuse */
 		block_num = DIV_ROUND_UP(MT7996_EEPROM_SIZE, eeprom_blk_size);
 		for (i = 0; i < block_num; i++) {
-			ret = mt7996_mcu_get_eeprom(dev, i * eeprom_blk_size);
+			ret = mt7996_mcu_get_eeprom(dev, i * eeprom_blk_size, NULL);
 			if (ret < 0)
 				return ret;
 		}
