@@ -62,6 +62,9 @@ int mt7996_run(struct ieee80211_hw *hw)
 			goto out;
 	}
 
+	phy->sr_enable = true;
+	phy->enhanced_sr_enable = true;
+
 	mt7996_testmode_disable_all(dev);
 
 	mt7996_mac_enable_nf(dev, phy->mt76->band_idx);
