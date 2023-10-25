@@ -1401,6 +1401,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->eht_su_beamformer = false;
 		link_conf->eht_su_beamformee = false;
 		link_conf->eht_mu_beamformer = false;
+		link_conf->eht_support = false;
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
