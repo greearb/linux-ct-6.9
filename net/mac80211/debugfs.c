@@ -501,6 +501,7 @@ static const char *hw_flag_names[] = {
 	FLAG(MLO_MCAST_MULTI_LINK_TX),
 	FLAG(DISALLOW_PUNCTURING),
 	FLAG(HANDLES_QUIET_CSA),
+	FLAG(WANT_CLEAR_SDATA_ALWAYS),
 #undef FLAG
 };
 
