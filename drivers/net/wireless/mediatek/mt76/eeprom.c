@@ -141,6 +141,73 @@ exit:
 }
 EXPORT_SYMBOL_GPL(mt76_get_of_data_from_nvmem);
 
+int mt76_get_of_data_from_file(struct mt76_dev *dev, void *eep, u32 offset, int len)
+{
+#if defined(CONFIG_OF)
+	int ret = 0;
+	int retlen;
+
+	char path[64] = "";
+	struct file *fp;
+	loff_t pos = 0;
+	struct inode *inode = NULL;
+	loff_t f_size;
+
+	dev_dbg(dev->dev, "looking for /lib/firmware/mediatek/rf.bin");
+	retlen = snprintf(path,sizeof(path),"/lib/firmware/mediatek/rf.bin");
+	if(retlen < 0)
+		return -EINVAL;
+
+	fp = filp_open(path, O_RDONLY, 0);
+	if (IS_ERR(fp)) {
+		dev_warn(dev->dev,"open eeprom file failed: %s\n",path);
+		return -ENOENT;
+	}
+
+	inode = file_inode(fp);
+	if ((!S_ISREG(inode->i_mode) && !S_ISBLK(inode->i_mode))) {
+		printk(KERN_ALERT "invalid file type: %s\n", path);
+		return -ENOENT;
+	}
+
+	f_size = i_size_read(inode->i_mapping->host);
+	if (f_size < 0)
+	{
+		printk(KERN_ALERT "failed getting size of %s size:%lld \n", path, f_size);
+		return -ENOENT;
+	}
+
+	pos = offset;
+
+	dev_dbg(dev->dev, "reading file: len %d, pos %lld \n", len, pos);
+	retlen = kernel_read(fp, eep, len, &pos);
+	if (retlen != len) {
+		ret = -EINVAL;
+		dev_warn(dev->dev,"load eeprom ERROR, count %d byte (len:%d)\n", ret, len);
+		goto out_put_node;
+	}
+
+	if (of_property_read_bool(dev->dev->of_node, "big-endian")) {
+		int i;
+		u8 *data = (u8 *)eep;
+
+		/* convert eeprom data in Little Endian */
+		for (i = 0; i < round_down(len, 2); i += 2)
+			put_unaligned_le16(get_unaligned_be16(&data[i]),
+					   &data[i]);
+	}
+
+	dev_dbg(dev->dev,"load eeprom from rf.bin OK, count %d, pos %lld \n", retlen, pos);
+
+out_put_node:
+	filp_close(fp, 0);
+	return ret;
+#else
+	return -ENOENT;
+#endif
+}
+EXPORT_SYMBOL_GPL(mt76_get_of_data_from_file);
+
 static int mt76_get_of_eeprom(struct mt76_dev *dev, void *eep, int len)
 {
 	struct device_node *np = dev->dev->of_node;
@@ -410,10 +477,20 @@ EXPORT_SYMBOL_GPL(mt76_get_rate_power_limits);
 int
 mt76_eeprom_init(struct mt76_dev *dev, int len)
 {
+#if defined(CONFIG_OF)
+	u32 offset;
+	struct device_node *np = dev->dev->of_node;
+#endif
+
 	dev->eeprom.size = len;
 	dev->eeprom.data = devm_kzalloc(dev->dev, len, GFP_KERNEL);
 	if (!dev->eeprom.data)
 		return -ENOMEM;
+
+#if defined(CONFIG_OF)
+	if (np && of_property_read_u32(np, "mediatek,eeprom-file-offset", &offset) == 0)
+		return !mt76_get_of_data_from_file(dev, dev->eeprom.data, offset, len);
+#endif
 
 	return !mt76_get_of_eeprom(dev, dev->eeprom.data, len);
 }
