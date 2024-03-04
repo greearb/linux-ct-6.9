@@ -153,10 +153,12 @@ int mt76_get_of_data_from_file(struct mt76_dev *dev, void *eep, u32 offset, int 
 	struct inode *inode = NULL;
 	loff_t f_size;
 
-	dev_dbg(dev->dev, "looking for /lib/firmware/mediatek/rf.bin");
+	mtk_dbg(dev, CFG, "Attempting to load eeprom rf.bin\n");
 	retlen = snprintf(path,sizeof(path),"/lib/firmware/mediatek/rf.bin");
-	if(retlen < 0)
+	if (retlen < 0) {
+		mtk_dbg(dev, CFG, "ERROR:  Could not find rf.bin\n");
 		return -EINVAL;
+	}
 
 	fp = filp_open(path, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
@@ -166,20 +168,20 @@ int mt76_get_of_data_from_file(struct mt76_dev *dev, void *eep, u32 offset, int 
 
 	inode = file_inode(fp);
 	if ((!S_ISREG(inode->i_mode) && !S_ISBLK(inode->i_mode))) {
-		printk(KERN_ALERT "invalid file type: %s\n", path);
+		dev_warn(dev->dev, "invalid eeprom file type: %s\n", path);
 		return -ENOENT;
 	}
 
 	f_size = i_size_read(inode->i_mapping->host);
 	if (f_size < 0)
 	{
-		printk(KERN_ALERT "failed getting size of %s size:%lld \n", path, f_size);
+		dev_warn(dev->dev, "failed getting eeprom size of %s size:%lld \n", path, f_size);
 		return -ENOENT;
 	}
 
 	pos = offset;
 
-	dev_dbg(dev->dev, "reading file: len %d, pos %lld \n", len, pos);
+	mtk_dbg(dev, CFG, "reading eeprom file: len %d, pos %lld \n", len, pos);
 	retlen = kernel_read(fp, eep, len, &pos);
 	if (retlen != len) {
 		ret = -EINVAL;
@@ -197,7 +199,8 @@ int mt76_get_of_data_from_file(struct mt76_dev *dev, void *eep, u32 offset, int 
 					   &data[i]);
 	}
 
-	dev_dbg(dev->dev,"load eeprom from rf.bin OK, count %d, pos %lld \n", retlen, pos);
+	mtk_dbg(dev, CFG, "load eeprom from rf.bin OK, count %d, pos %lld ret: %d\n",
+		retlen, pos, ret);
 
 out_put_node:
 	filp_close(fp, 0);
@@ -419,12 +422,16 @@ s8 mt76_get_rate_power_limits(struct mt76_phy *phy,
 
 	memset(dest, target_power, sizeof(*dest));
 
-	if (!IS_ENABLED(CONFIG_OF))
+	if (!IS_ENABLED(CONFIG_OF)) {
+		mtk_dbg(dev, CFG, "get-rate-power-limits:  CONFIG_OF not enabled.\n");
 		return target_power;
+	}
 
 	np = mt76_find_power_limits_node(dev);
-	if (!np)
+	if (!np) {
+		/*mtk_dbg(dev, CFG, "get-rate-power-limits:  Could not find node.\n"); */
 		return target_power;
+	}
 
 	switch (chan->band) {
 	case NL80211_BAND_2GHZ:
@@ -442,12 +449,17 @@ s8 mt76_get_rate_power_limits(struct mt76_phy *phy,
 
 	snprintf(name, sizeof(name), "txpower-%cg", band);
 	np = of_get_child_by_name(np, name);
-	if (!np)
+	if (!np) {
+		mtk_dbg(dev, CFG, "get-rate-power-limits:  Could not find band node: %s\n",
+			name);
 		return target_power;
+	}
 
 	np = mt76_find_channel_node(np, chan);
-	if (!np)
+	if (!np) {
+		mtk_dbg(dev, CFG, "get-rate-power-limits:  Could not find chan node\n");
 		return target_power;
+	}
 
 	txs_delta = mt76_get_txs_delta(np, hweight16(phy->chainmask));
 
@@ -488,8 +500,17 @@ mt76_eeprom_init(struct mt76_dev *dev, int len)
 		return -ENOMEM;
 
 #if defined(CONFIG_OF)
-	if (np && of_property_read_u32(np, "mediatek,eeprom-file-offset", &offset) == 0)
+	if (np && of_property_read_u32(np, "mediatek,eeprom-file-offset", &offset) == 0) {
 		return !mt76_get_of_data_from_file(dev, dev->eeprom.data, offset, len);
+	} else {
+		int rv;
+
+		offset = 0;
+		rv = mt76_get_of_data_from_file(dev, dev->eeprom.data, offset, len);
+
+		if (!rv)
+			return !rv;
+	}
 #endif
 
 	return !mt76_get_of_eeprom(dev, dev->eeprom.data, len);

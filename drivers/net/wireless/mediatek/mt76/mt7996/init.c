@@ -14,7 +14,8 @@
 #include "coredump.h"
 #include "eeprom.h"
 
-#define MT76_DRIVER_VERSION "6.7.0-ct"
+#define MT76_DRIVER_VERSION "6.8.0-ct"
+extern u32 debug_lvl; /* module param */
 
 static const struct ieee80211_iface_limit if_limits[] = {
 	{
@@ -1318,6 +1319,7 @@ int mt7996_register_device(struct mt7996_dev *dev)
 	dev->phy.dev = dev;
 	dev->phy.mt76 = &dev->mt76.phy;
 	dev->mt76.phy.priv = &dev->phy;
+	dev->mt76.debug_lvl = debug_lvl;
 	INIT_WORK(&dev->rc_work, mt7996_mac_sta_rc_work);
 	INIT_DELAYED_WORK(&dev->mphy.mac_work, mt7996_mac_work);
 	INIT_LIST_HEAD(&dev->sta_rc_list);

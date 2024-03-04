@@ -1115,6 +1115,7 @@ enum MTK_DEUBG {
 	MTK_DEBUG_FATAL		= 0x00000004,
 	MTK_DEBUG_WRN		= 0x00000008,
 	MTK_DEBUG_MSG		= 0x00000010, /* messages to/from firmware */
+	MTK_DEBUG_CFG		= 0x00000020, /* Configuration related */
 	MTK_DEBUG_ANY		= 0xffffffff
 };
 
