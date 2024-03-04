@@ -7,7 +7,7 @@
 #include "mcu.h"
 #include "mac.h"
 
-static u32 debug_lvl = MTK_DEBUG_FATAL | MTK_DEBUG_WRN;
+u32 debug_lvl = MTK_DEBUG_FATAL | MTK_DEBUG_WRN;
 module_param(debug_lvl, uint, 0644);
 MODULE_PARM_DESC(debug_lvl,
 		 "Enable debugging messages\n"
@@ -16,6 +16,7 @@ MODULE_PARM_DESC(debug_lvl,
 		 "0x00004	fatal/very-important messages\n"
 		 "0x00008	warning messages\n"
 		 "0x00010	Info about messages to/from firmware\n"
+		 "0x00020	Configuration logs.\n"
 		 "0xffffffff	any/all\n"
 	);
 
@@ -422,8 +423,11 @@ static int mt7996_config(struct ieee80211_hw *hw, u32 changed)
 	if (changed & (IEEE80211_CONF_CHANGE_POWER |
 		       IEEE80211_CONF_CHANGE_CHANNEL)) {
 		ret = mt7996_mcu_set_txpower_sku(phy);
-		if (ret)
+		if (ret) {
+			dev_err(dev->mt76.dev,
+				"config:  Failed to set txpower: %d\n", ret);
 			return ret;
+		}
 	}
 
 	mutex_lock(&dev->mt76.mutex);
