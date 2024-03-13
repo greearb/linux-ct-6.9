@@ -3824,17 +3824,17 @@ int mt7996_mcu_get_chan_mib_info(struct mt7996_phy *phy, bool chan_switch)
 		goto out;
 
 #define __res_u64(s) le64_to_cpu(res[s].data)
-	state->cc_tx += __res_u64(1) - state_ts->cc_tx;
-	state->cc_bss_rx += __res_u64(2) - state_ts->cc_bss_rx;
-	state->cc_rx += __res_u64(2) + __res_u64(3) - state_ts->cc_rx;
-	state->cc_busy += __res_u64(0) + __res_u64(1) + __res_u64(2) + __res_u64(3) -
+	state->cc_tx += __res_u64(0) - state_ts->cc_tx;
+	state->cc_bss_rx += __res_u64(1) - state_ts->cc_bss_rx;
+	state->cc_rx += __res_u64(1) + __res_u64(2) - state_ts->cc_rx;
+	state->cc_busy += __res_u64(3) + __res_u64(0) + __res_u64(1) + __res_u64(2) -
 			  state_ts->cc_busy;
 
 out:
-	state_ts->cc_tx = __res_u64(1);
-	state_ts->cc_bss_rx = __res_u64(2);
-	state_ts->cc_rx = __res_u64(2) + __res_u64(3);
-	state_ts->cc_busy = __res_u64(0) + __res_u64(1) + __res_u64(2) + __res_u64(3);
+	state_ts->cc_tx = __res_u64(0);
+	state_ts->cc_bss_rx = __res_u64(1);
+	state_ts->cc_rx = __res_u64(1) + __res_u64(2);
+	state_ts->cc_busy = __res_u64(3) + __res_u64(0) + __res_u64(1) + __res_u64(2);
 #undef __res_u64
 
 	dev_kfree_skb(skb);
