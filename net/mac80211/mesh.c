@@ -608,7 +608,7 @@ int mesh_add_he_oper_ie(struct ieee80211_sub_if_data *sdata,
 		return -ENOMEM;
 
 	pos = skb_put(skb, len);
-	ieee80211_ie_build_he_oper(pos, &sdata->vif.bss_conf.chanreq.oper);
+	ieee80211_ie_build_he_oper(sdata, pos, &sdata->vif.bss_conf.chanreq.oper);
 
 	return 0;
 }
