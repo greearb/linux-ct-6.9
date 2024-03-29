@@ -169,6 +169,8 @@ mt76_version(struct seq_file *s, void *data)
 		seq_printf(s, "7922\n");
 	else if (is_mt7921(dev))
 		seq_printf(s, "7921\n");
+	else if (is_mt7927(dev))
+		seq_printf(s, "7927\n");
 	else if (is_mt7925(dev))
 		seq_printf(s, "7925\n");
 	else if (is_mt7663(dev))
