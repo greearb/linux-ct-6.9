@@ -234,6 +234,28 @@ mt7925_init_eht_caps(struct mt792x_phy *phy, enum nl80211_band band,
 	eht_nss->bw._160.rx_tx_mcs9_max_nss = val;
 	eht_nss->bw._160.rx_tx_mcs11_max_nss = val;
 	eht_nss->bw._160.rx_tx_mcs13_max_nss = val;
+
+	if (is_mt7927(phy->mt76->dev)) {
+		val = max_t(u8, sts - 1, 1);
+		eht_cap_elem->phy_cap_info[0] |=
+			IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ;
+		eht_cap_elem->phy_cap_info[1] |=
+			u8_encode_bits(val,
+				       IEEE80211_EHT_PHY_CAP1_BEAMFORMEE_SS_320MHZ_MASK);
+		eht_cap_elem->phy_cap_info[2] |=
+			u8_encode_bits(sts - 1, IEEE80211_EHT_PHY_CAP2_SOUNDING_DIM_320MHZ_MASK);
+		val = width == NL80211_CHAN_WIDTH_320 ? 0xf :
+			width == NL80211_CHAN_WIDTH_160 ? 0x7 :
+			width == NL80211_CHAN_WIDTH_80 ? 0x3 : 0x1;
+		eht_cap_elem->phy_cap_info[7] |=
+			IEEE80211_EHT_PHY_CAP7_NON_OFDMA_UL_MU_MIMO_320MHZ |
+			IEEE80211_EHT_PHY_CAP7_MU_BEAMFORMER_320MHZ;
+		val = u8_encode_bits(nss, IEEE80211_EHT_MCS_NSS_RX) |
+			u8_encode_bits(nss, IEEE80211_EHT_MCS_NSS_TX);
+		eht_nss->bw._320.rx_tx_mcs9_max_nss = val;
+		eht_nss->bw._320.rx_tx_mcs11_max_nss = val;
+		eht_nss->bw._320.rx_tx_mcs13_max_nss = val;
+	}
 }
 
 static void
