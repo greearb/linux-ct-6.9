@@ -388,8 +388,10 @@ static void sfp_fixup_rollball(struct sfp *sfp)
 // For 2.5GBASE-T short-reach modules
 static void sfp_fixup_oem_2_5gbaset(struct sfp *sfp)
 {
-	sfp_fixup_rollball(sfp);
-	sfp->id.base.extended_cc = SFF8024_ECC_2_5GBASE_T;
+	//sfp->mdio_protocol = MDIO_I2C_MARVELL_C22;
+	sfp->mdio_protocol = MDIO_I2C_NONE;
+	//sfp_fixup_rollball(sfp);
+	//sfp->id.base.extended_cc = SFF8024_ECC_2_5GBASE_T;
 }
 
 static void sfp_fixup_fs_10gt(struct sfp *sfp)
@@ -437,6 +439,18 @@ static void sfp_quirk_disable_autoneg(const struct sfp_eeprom_id *id,
 {
 	linkmode_clear_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, modes);
 }
+
+static void sfp_quirk_oem_2_5g(const struct sfp_eeprom_id *id,
+			       unsigned long *modes,
+			       unsigned long *interfaces)
+{
+	/* Copper 2.5G SFP */
+	linkmode_set_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT, modes);
+	__set_bit(PHY_INTERFACE_MODE_2500BASEX, interfaces);
+	sfp_quirk_disable_autoneg(id, modes, interfaces);
+}
+
+
 
 static void sfp_quirk_ubnt_uf_instant(const struct sfp_eeprom_id *id,
 				      unsigned long *modes,
@@ -503,7 +517,9 @@ static const struct sfp_quirk sfp_quirks[] = {
 	SFP_QUIRK_F("OEM", "SFP-GE-T", sfp_fixup_ignore_tx_fault),
 
 	SFP_QUIRK_F("OEM", "SFP-10G-T", sfp_fixup_rollball_cc),
-	SFP_QUIRK_F("OEM", "SFP-2.5G-T", sfp_fixup_oem_2_5gbaset),
+	SFP_QUIRK("OEM", "SFP-2.5G-T", sfp_quirk_oem_2_5g,
+			sfp_fixup_oem_2_5gbaset),
+	//SFP_QUIRK_F("OEM", "SFP-2.5G-T", sfp_fixup_oem_2_5gbaset),
 	SFP_QUIRK_F("OEM", "SFP-2.5G-T-R-RM", sfp_fixup_oem_2_5gbaset),
 	SFP_QUIRK_F("OEM", "RTSFP-10", sfp_fixup_rollball_cc),
 	SFP_QUIRK_F("OEM", "RTSFP-10G", sfp_fixup_rollball_cc),
@@ -1907,20 +1923,23 @@ static int sfp_sm_add_mdio_bus(struct sfp *sfp)
 static int sfp_sm_probe_for_phy(struct sfp *sfp)
 {
 	int err = 0;
-
 	switch (sfp->mdio_protocol) {
 	case MDIO_I2C_NONE:
+		pr_info("PHY Mode: NONE\n");
 		break;
 
 	case MDIO_I2C_MARVELL_C22:
+		pr_info("PHY Mode: C22\n");
 		err = sfp_sm_probe_phy(sfp, SFP_PHY_ADDR, false);
 		break;
 
 	case MDIO_I2C_C45:
+		pr_info("PHY Mode: C45\n");
 		err = sfp_sm_probe_phy(sfp, SFP_PHY_ADDR, true);
 		break;
 
 	case MDIO_I2C_ROLLBALL:
+		pr_info("PHY Mode: ROLLBALL\n");
 		err = sfp_sm_probe_phy(sfp, SFP_PHY_ADDR_ROLLBALL, true);
 		break;
 	}
