@@ -4,6 +4,7 @@
  *
  * Author: Peter Geis <pgwipeout@gmail.com>
  * Author: Frank <Frank.Sae@motor-comm.com>
+ * Author: James Courtier-Dutton <james.dutton@gmail.com>
  */
 
 #include <linux/etherdevice.h>
@@ -16,6 +17,16 @@
 #define PHY_ID_YT8521		0x0000011a
 #define PHY_ID_YT8531		0x4f51e91b
 #define PHY_ID_YT8531S		0x4f51e91a
+#define PHY_ID_YT8821		0x4f51ea19
+
+#define REG_PHY_SPEC_STATUS	0x11
+#define REG_DEBUG_ADDR_OFFSET	0x1e
+#define REG_DEBUG_DATA		0x1f
+
+/* to enable system WOL feature of phy, please define this macro to 1
+ * otherwise, define it to 0.
+ */
+#define YTPHY_WOL_FEATURE_ENABLE	0
 
 /* YT8521/YT8531S Register Overview
  *	UTP Register space	|	FIBER Register space
@@ -131,6 +142,18 @@
 #define YT8511_DELAY_GE_TX_DIS	(0x2 << 4)
 #define YT8511_DELAY_FE_TX_EN	(0xf << 12)
 #define YT8511_DELAY_FE_TX_DIS	(0x2 << 12)
+
+
+#define YT8512_DUPLEX			0x2000
+#define YT8512_SPEED_MODE_BIT		14
+#define YT8512_DUPLEX_BIT		13
+#define YT8512_EN_SLEEP_SW_BIT		15
+#define YTXXXX_SPEED_MODE		0xc000
+#define YTXXXX_DUPLEX			0x2000
+#define YTXXXX_SPEED_MODE_BIT		14
+#define YTXXXX_DUPLEX_BIT		13
+#define YTXXXX_LINK_STATUS_BIT		10
+
 
 /* Extended register is different from MMD Register and MII Register.
  * We can use ytphy_read_ext/ytphy_write_ext/ytphy_modify_ext function to
@@ -2252,6 +2275,295 @@ static int yt8521_get_features(struct phy_device *phydev)
 	return ret;
 }
 
+static int ytphy_soft_reset(struct phy_device *phydev)
+{
+	int ret = 0, val = 0;
+	val = phy_read(phydev, MII_BMCR);
+	if (val < 0)
+		return val;
+	ret = phy_write(phydev, MII_BMCR, val | BMCR_RESET);
+	if (ret < 0)
+		return ret;
+	return ret;
+}
+
+static int yt8821_get_features(struct phy_device *phydev)
+{
+
+	pr_info("yt8821_get_features called\n");
+	linkmode_mod_bit(ETHTOOL_LINK_MODE_2500baseT_Full_BIT, phydev->supported, 1);
+	/* JCD added */
+	//linkmode_mod_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, phydev->supported, 0);
+	return genphy_read_abilities(phydev);
+}
+
+static int yt8821_aneg_done(struct phy_device *phydev)
+{
+	pr_info("yt8821_aneg_done called\n");
+	int link_utp = 0;
+	/* reading UTP */
+	ytphy_write_ext(phydev, 0xa000, 0);
+	link_utp = !!(phy_read(phydev, REG_PHY_SPEC_STATUS) & (BIT(10)));
+
+	netdev_info(phydev->attached_dev, "%s, phy addr: %d, link_utp: %d\n",
+		__func__, phydev->mdio.addr, link_utp);
+	return !!(link_utp);
+}
+
+
+static int yt8821_init(struct phy_device *phydev)
+{
+	int ret = 0;
+	ret = ytphy_write_ext(phydev, 0xa000, 0x0);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x34e, 0x8080);
+	if (ret < 0)
+		return ret;
+
+	ret = ytphy_write_ext(phydev, 0x4d2, 0x5200);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x4d3, 0x5200);
+	if (ret < 0)
+		return ret;
+
+	ret = ytphy_write_ext(phydev, 0x372, 0x5a3c);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x374, 0x7c6c);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x336, 0xaa0a);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x340, 0x3022);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x36a, 0x8000);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x4b3, 0x7711);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x4b5, 0x2211);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x56, 0x20);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x56, 0x3f);
+	if (ret < 0)
+		return ret;
+	ret = ytphy_write_ext(phydev, 0x97, 0x380c);
+	if (ret < 0)
+		return ret;
+	/* soft reset */
+	ytphy_soft_reset(phydev);
+
+	return ret;
+}
+
+#define YT8821_CHIP_MODE_AUTO_BX2500_SGMII	(1)
+#define YT8821_CHIP_MODE_FORCE_BX2500		(0)
+#define YT8821_CHIP_MODE_UTP_TO_FIBER_FORCE	(0)
+static int yt8821_config_init(struct phy_device *phydev)
+{
+	pr_info("yt8821_config_init called\n");
+	int ret, val;
+	phydev->irq = PHY_POLL;
+
+	val = ytphy_read_ext(phydev, 0xa001);
+#if (YT8821_CHIP_MODE_AUTO_BX2500_SGMII)	//ext reg 0xa001 bit2: 0 3'b000
+	val &= ~(BIT(0));
+	val &= ~(BIT(1));
+	val &= ~(BIT(2));
+	ret = ytphy_write_ext(phydev, 0xa001, val);
+	if (ret < 0)
+		return ret;
+#elif (YT8821_CHIP_MODE_FORCE_BX2500)		//ext reg 0xa001 bit2: 0 3'b001
+	val |= BIT(0);
+	val &= ~(BIT(1));
+	val &= ~(BIT(2));
+	ret = ytphy_write_ext(phydev, 0xa001, val);
+	if (ret < 0)
+		return ret;
+#elif (YT8821_CHIP_MODE_UTP_TO_FIBER_FORCE)	//ext reg 0xa001 bit2: 0 3'b101
+	val |= BIT(0);
+	val &= ~(BIT(1));
+	val |= BIT(2);
+	ret = ytphy_write_ext(phydev, 0xa001, val);
+	if (ret < 0)
+		return ret;
+#endif
+	pr_info("JCD300: about to init\n");
+	ret = yt8821_init(phydev);
+	if (ret < 0)
+		return ret;
+	pr_info("JCD300: init done\n");
+	/* disable auto sleep */
+	val = ytphy_read_ext(phydev, YT8521_EXTREG_SLEEP_CONTROL1_REG);
+	if (val < 0)
+		return val;
+	val &= (~YT8521_ESC1R_SLEEP_SW);
+	ret = ytphy_write_ext(phydev, YT8521_EXTREG_SLEEP_CONTROL1_REG, val);
+	if (ret < 0)
+		return ret;
+
+	pr_info("JCD300: about to dump regs\n");
+	for (int n = 0; n < 0x20; n++) {
+		val = __phy_read(phydev, n);
+		pr_info("JCD300: phy_read 0x56: 0x%x: 0x%x\n", n, val);
+	}
+	val = __phy_read_mmd(phydev, 1, 2);
+	pr_info("JCD300: phy_read_mmd 0x56: 1,2: 0x%x\n", val);
+	val = __phy_read_mmd(phydev, 1, 4);
+	pr_info("JCD300: phy_read_mmd 0x56: 1,4: 0x%x\n", val);
+
+
+	netdev_info(phydev->attached_dev, "%s done, phy addr: %d\n", __func__, phydev->mdio.addr);
+	return ret;
+}
+
+static int yt8821_adjust_status(struct phy_device *phydev, int val)
+{
+	int speed_mode, duplex;
+	int speed_mode_bit15_14, speed_mode_bit9;
+	int speed = SPEED_UNKNOWN;
+	duplex = (val & YT8512_DUPLEX) >> YTXXXX_DUPLEX_BIT;
+	/* Bit9-Bit15-Bit14 speed mode 100---2.5G; 010---1000M; 001---100M; 000--- 10M */
+	speed_mode_bit15_14 = (val & YTXXXX_SPEED_MODE) >> YTXXXX_SPEED_MODE_BIT;
+	speed_mode_bit9 = (val & BIT(9)) >> 9;
+	speed_mode = (speed_mode_bit9 << 2) | speed_mode_bit15_14;
+	switch (speed_mode) {
+	case 0:
+		speed = SPEED_10;
+		break;
+	case 1:
+		speed = SPEED_100;
+		break;
+	case 2:
+		speed = SPEED_1000;
+		break;
+	case 4:
+		speed = SPEED_2500;
+		break;
+	default:
+		speed = SPEED_UNKNOWN;
+		break;
+	}
+	phydev->speed = speed;
+	phydev->duplex = duplex;
+	return 0;
+}
+
+static int yt8821_read_status(struct phy_device *phydev)
+{
+	pr_info("yt8821_read_status called\n");
+	int ret;
+	int val;
+	int link;
+	int link_utp = 0;
+	/* reading UTP */
+	ret = ytphy_write_ext(phydev, 0xa000, 0);
+	if (ret < 0)
+		return ret;
+
+	pr_info("JCD301: about to dump regs\n");
+	for (int n = 0; n < 0x20; n++) {
+		val = __phy_read(phydev, n);
+		pr_info("JCD301: phy_read 0x56: 0x%x: 0x%x\n", n, val);
+	}
+	val = ytphy_read_ext(phydev, 0xa001);
+	//val = __phy_write(phydev, 0x1e, 0xa001);
+	val = phy_read(phydev, 0x1e);
+	pr_info("JCD301: phy_read test MII:0  0x56: 0x%x: 0x%x\n", 0x1e, val);
+
+
+	val = phy_read(phydev, REG_PHY_SPEC_STATUS);
+	if (val < 0)
+		return val;
+	link = val & (BIT(YTXXXX_LINK_STATUS_BIT));
+	pr_info("JCD20: val=0x%x, link=0x%x\n", val, link);
+	if (link) {
+		pr_info("JCD20: link=0x%x\n", link);
+		link_utp = 1;
+		yt8821_adjust_status(phydev, val);	/* speed(2500), duplex */
+	} else {
+		link_utp = 0;
+	}
+	if (link_utp) {
+		if (phydev->link == 0) {
+			netdev_info(phydev->attached_dev, "%s, phy addr: %d, link up, mii reg 0x11 = 0x%x\n", __func__, phydev->mdio.addr, (unsigned int)val);
+			phydev->phy_link_change(phydev, true);
+			//netif_carrier_on(phydev->attached_dev);
+		}
+		phydev->link = 1;
+		pr_info("JCD23: link up\n");
+		//clear_bit(__LINK_STATE_PRESENT, &(phydev->attached_dev->state));
+
+		//phydev->adjust_link(phydev->attached_dev);
+	} else {
+		if (phydev->link == 1) {
+			netdev_info(phydev->attached_dev, "%s, phy addr: %d, link down\n", __func__, phydev->mdio.addr);
+			phydev->phy_link_change(phydev, false);
+			//netif_carrier_off(phydev->attached_dev);
+		}
+		phydev->link = 0;
+		pr_info("JCD23: link down\n");
+		//set_bit(__LINK_STATE_PRESENT, &(phydev->attached_dev->state));
+		//phydev->adjust_link(phydev->attached_dev);
+	}
+	if (link_utp)
+		ytphy_write_ext(phydev, 0xa000, 0);
+
+	pr_info("JCD21: link=0x%x\n", phydev->link);
+	return 0;
+}
+
+static int yt8821_soft_reset(struct phy_device *phydev)
+{
+	pr_info("yt8821_soft_reset called\n");
+	int ret, val;
+	val = ytphy_read_ext(phydev, 0xa001);
+	ytphy_write_ext(phydev, 0xa001, (val & ~0x8000));
+	ytphy_write_ext(phydev, 0xa000, 0);
+	ret = ytphy_soft_reset(phydev);
+	return ret;
+}
+
+static int yt8821_suspend(struct phy_device *phydev)
+{
+	pr_info("yt8821_suspend called\n");
+	int value = 0;
+	int wol_enabled = 0;
+#if (YTPHY_WOL_FEATURE_ENABLE)
+	value = phy_read(phydev, YTPHY_UTP_INTR_REG);
+	wol_enabled = value & YTPHY_WOL_FEATURE_INTR;
+#endif
+	// JCD commented out
+	//if (!wol_enabled)
+	//{
+	//	value = phy_read(phydev, MII_BMCR);
+	//	phy_write(phydev, MII_BMCR, value | BMCR_PDOWN);
+	//}
+	return 0;
+}
+
+static int yt8821_resume(struct phy_device *phydev)
+{
+	pr_info("yt8821_suspend called\n");
+	int value;
+
+	value = phy_read(phydev, MII_BMCR);
+	value &= ~BMCR_PDOWN;
+	value &= ~BMCR_ISOLATE;
+
+	phy_write(phydev, MII_BMCR, value);
+
+	return 0;
+}
+
 static struct phy_driver motorcomm_phy_drvs[] = {
 	{
 		PHY_ID_MATCH_EXACT(PHY_ID_YT8511),
@@ -2307,6 +2619,21 @@ static struct phy_driver motorcomm_phy_drvs[] = {
 		.suspend	= yt8521_suspend,
 		.resume		= yt8521_resume,
 	},
+	{
+		PHY_ID_MATCH_EXACT(PHY_ID_YT8821),
+		.name		= "YT8821 2.5 Gigabit Ethernet",
+		.get_features	= yt8821_get_features,
+		.get_wol	= ytphy_get_wol,
+		.set_wol	= ytphy_set_wol,
+		.config_aneg	= genphy_config_aneg,
+		.aneg_done	= yt8821_aneg_done,
+		.config_init	= yt8821_config_init,
+		.read_status	= yt8821_read_status,
+		.flags		= PHY_POLL,
+		.soft_reset	= yt8821_soft_reset,
+		.suspend	= yt8821_suspend,
+		.resume		= yt8821_resume,
+	},
 };
 
 module_phy_driver(motorcomm_phy_drvs);
@@ -2321,6 +2648,7 @@ static const struct mdio_device_id __maybe_unused motorcomm_tbl[] = {
 	{ PHY_ID_MATCH_EXACT(PHY_ID_YT8521) },
 	{ PHY_ID_MATCH_EXACT(PHY_ID_YT8531) },
 	{ PHY_ID_MATCH_EXACT(PHY_ID_YT8531S) },
+	{ PHY_ID_MATCH_EXACT(PHY_ID_YT8821) },
 	{ /* sentinel */ }
 };
 
