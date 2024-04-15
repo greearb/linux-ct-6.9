@@ -110,11 +110,12 @@ static int mt7996_eeprom_load(struct mt7996_dev *dev)
 		if (free_block_num >= 59)
 			return -EINVAL;
 
+		memset(dev->mt76.eeprom.data, 0, MT7996_EEPROM_SIZE);
 		/* read eeprom data from efuse */
 		block_num = DIV_ROUND_UP(MT7996_EEPROM_SIZE, eeprom_blk_size);
 		for (i = 0; i < block_num; i++) {
 			ret = mt7996_mcu_get_eeprom(dev, i * eeprom_blk_size, NULL);
-			if (ret < 0)
+			if (ret < 0 && ret != -EINVAL)
 				return ret;
 		}
 	}
