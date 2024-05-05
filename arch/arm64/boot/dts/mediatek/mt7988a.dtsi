@@ -129,15 +129,6 @@
 		};
 	};
 
-	fan: pwm-fan {
-		compatible = "pwm-fan";
-		/* cooling level (0, 1, 2) : (0% duty, 50% duty, 100% duty) */
-		cooling-levels = <0 128 255>;
-		#cooling-cells = <2>;
-		#thermal-sensor-cells = <1>;
-		status = "disabled";
-	};
-
 	oscillator-40m {
 		compatible = "fixed-clock";
 		clock-frequency = <40000000>;
@@ -559,6 +550,15 @@
 						 "pcie_wake_n3_0";
 				};
 			};
+		};
+
+		fan: pwm-fan {
+			compatible = "pwm-fan";
+			/* cooling level (0, 1, 2) : (0% duty, 50% duty, 100% duty) */
+			cooling-levels = <0 128 255>;
+			#cooling-cells = <2>;
+			#thermal-sensor-cells = <1>;
+			status = "disabled";
 		};
 
 		pwm: pwm@10048000 {
