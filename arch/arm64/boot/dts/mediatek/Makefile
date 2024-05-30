@@ -38,6 +38,7 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-rfb-sd.dtbo
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-rfb-snfi-nand.dtbo
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-rfb-spim-nand.dtbo
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-rfb-spim-nor.dtbo
+dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-smartrg-SDG-8733v.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-smartrg-SDG-8734v.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8167-pumpkin.dtb
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm.dtb
