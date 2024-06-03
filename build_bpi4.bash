@@ -17,9 +17,11 @@ rm -fr $dst
 mkdir -p $dst/boot/
 mkdir -p $dst/lib/modules/
 
-INSTALL_MOD_PATH=$dst make -j4 modules_install
+INSTALL_MOD_PATH=$dst make -j4 modules_install || exit 4
 
-cp -a bpi-r4.itb $dst/boot/
+./make-itb-r4.sh || exit 3
+
+cp -a bpi-r4.itb $dst/boot/ || exit 1
 
 # Copy firmware
 mkdir -p $dst/lib/firmware/mediatek
@@ -31,5 +33,5 @@ cp -ar /lib/firmware/iwlwifi-so* $dst/lib/firmware/
 cp -ar /lib/firmware/iwlwifi-ty* $dst/lib/firmware/
 
 cd $dst
-tar -cvzf ../ct${KVER_PKG}.bpi4.tar.gz .
+tar -cvzf ../ct${KVER_PKG}.bpi4.tar.gz . || exit 2
 cd -
