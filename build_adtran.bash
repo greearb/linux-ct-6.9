@@ -19,7 +19,8 @@ mkdir -p $dst/lib/modules/
 
 INSTALL_MOD_PATH=$dst make -j4 modules_install
 
-./make-itb-adtran.sh
+#./make-itb-adtran-sdg-8733v.sh
+./make-itb-adtran-sdg-all.sh
 
 cp -a fit-multi.itb $dst/boot/
 
