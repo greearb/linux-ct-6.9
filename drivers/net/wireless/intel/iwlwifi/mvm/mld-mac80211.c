@@ -43,8 +43,8 @@ static int iwl_mvm_mld_mac_add_interface(struct ieee80211_hw *hw,
 	mvmvif->deflink.active = 0;
 	/* the first link always points to the default one */
 	mvmvif->link[0] = &mvmvif->deflink;
-	pr_err("add-iface: setting link %d, mvmvif: %p  link[i]: %p\n",
-	       0, mvmvif, mvmvif->link[0]);
+	//pr_err("add-iface: setting link %d, mvmvif: %p  link[i]: %p\n",
+	//       0, mvmvif, mvmvif->link[0]);
 
 	ret = iwl_mvm_mld_mac_ctxt_add(mvm, vif);
 	if (ret)
