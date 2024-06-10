@@ -86,8 +86,8 @@ int mt7996_eeprom_check_fw_mode(struct mt7996_dev *dev)
 		dev->flash_mode = true;
 		eeprom = dev->mt76.eeprom.data;
 		/* testmode enable priority: eeprom field > module parameter */
-		dev->testmode_enable = !mt7996_check_eeprom(dev) ? eeprom[MT_EE_TESTMODE_EN] :
-								   testmode_enable;
+		//dev->testmode_enable = !mt7996_check_eeprom(dev) ? eeprom[MT_EE_TESTMODE_EN] :
+		//						   testmode_enable;
 	}
 
 	return ret;
