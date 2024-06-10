@@ -1,0 +1,642 @@
+diff --git a/drivers/net/wireless/mediatek/mt76/eeprom.c b/drivers/net/wireless/mediatek/mt76/eeprom.c
+index 6f4cd11d38c1..4a6ec0638674 100644
+--- a/drivers/net/wireless/mediatek/mt76/eeprom.c
++++ b/drivers/net/wireless/mediatek/mt76/eeprom.c
+@@ -232,6 +232,33 @@ static int mt76_get_of_eeprom(struct mt76_dev *dev, void *eep, int len)
+ 	return mt76_get_of_data_from_nvmem(dev, eep, "eeprom", len);
+ }
+ 
++bool mt76_check_bin_file_mode(struct mt76_dev *dev)
++{
++       struct device_node *np = dev->dev->of_node;
++       const char *bin_file_name = NULL;
++
++       if (!np) {
++	       dev_info(dev->dev, "check-bin-file-mode, of_node is NULL\n");
++               return false;
++       }
++
++       of_property_read_string(np, "bin_file_name", &bin_file_name);
++
++       dev->bin_file_name = bin_file_name;
++       if (dev->bin_file_name) {
++               dev_info(dev->dev, "Using bin file %s\n", dev->bin_file_name);
++#ifdef CONFIG_NL80211_TESTMODE
++               dev->test_mtd.name = devm_kstrdup(dev->dev, bin_file_name, GFP_KERNEL);
++               dev->test_mtd.offset = -1;
++#endif
++       }
++
++       of_node_put(np);
++
++       return dev->bin_file_name ? true : false;
++}
++EXPORT_SYMBOL_GPL(mt76_check_bin_file_mode);
++
+ void
+ mt76_eeprom_override(struct mt76_phy *phy)
+ {
+diff --git a/drivers/net/wireless/mediatek/mt76/mt76.h b/drivers/net/wireless/mediatek/mt76/mt76.h
+index 19eb979ba872..cba6a901915a 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt76.h
++++ b/drivers/net/wireless/mediatek/mt76/mt76.h
+@@ -19,6 +19,27 @@
+ #include "util.h"
+ #include "testmode.h"
+ 
++#define CHAN2G(_idx, _freq) {                  \
++		.band = NL80211_BAND_2GHZ,     \
++		.center_freq = (_freq),	       \
++		.hw_value = (_idx),	       \
++		.max_power = 30,	       \
++}
++
++#define CHAN5G(_idx, _freq) {                  \
++		.band = NL80211_BAND_5GHZ,     \
++		.center_freq = (_freq),	       \
++		.hw_value = (_idx),	       \
++		.max_power = 30,	       \
++}
++
++#define CHAN6G(_idx, _freq) {                  \
++		.band = NL80211_BAND_6GHZ,     \
++		.center_freq = (_freq),	       \
++		.hw_value = (_idx),	       \
++		.max_power = 30,	       \
++}
++
+ #define MT_MCU_RING_SIZE	32
+ #define MT_RX_BUF_SIZE		2048
+ #define MT_SKB_HEAD_LEN		256
+@@ -1004,6 +1025,8 @@ struct mt76_dev {
+ 		struct mt76_usb usb;
+ 		struct mt76_sdio sdio;
+ 	};
++
++	const char *bin_file_name;
+ };
+ 
+ /* per-phy stats.  */
+@@ -1385,6 +1408,7 @@ int mt76_get_of_data_from_file(struct mt76_dev *dev, void *eep, u32 offset, int
+ int mt76_get_of_data_from_mtd(struct mt76_dev *dev, void *eep, int offset, int len);
+ int mt76_get_of_data_from_nvmem(struct mt76_dev *dev, void *eep,
+ 				const char *cell_name, int len);
++bool mt76_check_bin_file_mode(struct mt76_dev *dev);
+ 
+ struct mt76_queue *
+ mt76_init_queue(struct mt76_dev *dev, int qid, int idx, int n_desc,
+diff --git a/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.h b/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.h
+index a8d5157fea09..3d9a8ddf0a00 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.h
++++ b/drivers/net/wireless/mediatek/mt76/mt76_connac_mcu.h
+@@ -1037,8 +1037,10 @@ enum {
+ 	MCU_UNI_EVENT_SR = 0x25,
+ 	MCU_UNI_EVENT_ROC = 0x27,
+ 	MCU_UNI_EVENT_TX_DONE = 0x2d,
++	MCU_UNI_EVENT_BF = 0x33,
+ 	MCU_UNI_EVENT_THERMAL = 0x35,
+ 	MCU_UNI_EVENT_NIC_CAPAB = 0x43,
++	MCU_UNI_EVENT_TESTMODE_CTRL = 0x46,
+ 	MCU_UNI_EVENT_WED_RRO = 0x57,
+ 	MCU_UNI_EVENT_PER_STA_INFO = 0x6d,
+ 	MCU_UNI_EVENT_ALL_STA_INFO = 0x6e,
+@@ -1269,6 +1271,7 @@ enum {
+ 	MCU_UNI_CMD_PP = 0x38,
+ 	MCU_UNI_CMD_FIXED_RATE_TABLE = 0x40,
+ 	MCU_UNI_CMD_TESTMODE_CTRL = 0x46,
++	MCU_UNI_CMD_PRECAL_RESULT = 0x47,
+ 	MCU_UNI_CMD_RRO = 0x57,
+ 	MCU_UNI_CMD_OFFCH_SCAN_CTRL = 0x58,
+ 	MCU_UNI_CMD_PER_STA_INFO = 0x6d,
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7996/debugfs.c b/drivers/net/wireless/mediatek/mt76/mt7996/debugfs.c
+index 72942d316e82..7b94362ad810 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7996/debugfs.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7996/debugfs.c
+@@ -1462,6 +1462,44 @@ mt7996_sr_scene_cond_show(struct seq_file *file, void *data)
+ }
+ DEFINE_SHOW_ATTRIBUTE(mt7996_sr_scene_cond);
+ 
++static int mt7996_show_eeprom_mode(struct seq_file *s, void *data)
++{
++	struct mt7996_dev *dev = dev_get_drvdata(s->private);
++	struct mt76_dev *mdev = &dev->mt76;
++#ifdef CONFIG_NL80211_TESTMODE
++	const char *mtd_name = mdev->test_mtd.name;
++	u32 mtd_offset = mdev->test_mtd.offset;
++#else
++	const char *mtd_name = NULL;
++	u32 mtd_offset;
++#endif
++
++	seq_printf(s, "Current eeprom mode:\n");
++
++	switch (dev->eeprom_mode) {
++	case DEFAULT_BIN_MODE:
++		seq_printf(s, "   default bin mode\n   filename = %s\n", mt7996_eeprom_name(dev));
++		break;
++	case EFUSE_MODE:
++		seq_printf(s, "   efuse mode\n");
++		break;
++	case FLASH_MODE:
++		if (mtd_name)
++			seq_printf(s, "   flash mode\n   mtd name = %s\n   flash offset = 0x%x\n",
++				   mtd_name, mtd_offset);
++		else
++			seq_printf(s, "   flash mode\n");
++		break;
++	case BIN_FILE_MODE:
++		seq_printf(s, "   bin file mode\n   filename = %s\n", mt7996_eeprom_name(dev));
++		break;
++	default:
++		break;
++	}
++
++	return 0;
++}
++
+ int mt7996_init_debugfs(struct mt7996_phy *phy)
+ {
+ 	struct mt7996_dev *dev = phy->dev;
+@@ -1497,6 +1535,8 @@ int mt7996_init_debugfs(struct mt7996_phy *phy)
+ 	debugfs_create_file("txpower_info", 0600, dir, phy, &mt7996_txpower_info_fops);
+ 	debugfs_create_file("txpower_sku", 0600, dir, phy, &mt7996_txpower_sku_fops);
+ 	debugfs_create_file("txpower_path", 0600, dir, phy, &mt7996_txpower_path_fops);
++	debugfs_create_devm_seqfile(dev->mt76.dev, "eeprom_mode", dir,
++				    mt7996_show_eeprom_mode);
+ 
+ 	debugfs_create_file("sr_enable", 0600, dir, phy, &fops_sr_enable);
+ 	debugfs_create_file("sr_enhanced_enable", 0600, dir, phy, &fops_sr_enhanced_enable);
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.c b/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.c
+index 615220d21f96..1ae710c3551b 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.c
++++ b/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.c
+@@ -12,6 +12,82 @@ static bool testmode_enable;
+ module_param(testmode_enable, bool, 0644);
+ MODULE_PARM_DESC(testmode_enable, "Enable testmode");
+ 
++const struct ieee80211_channel dpd_2g_ch_list_bw20[] = {
++	CHAN2G(3, 2422),
++	CHAN2G(7, 2442),
++	CHAN2G(11, 2462)
++};
++
++
++const struct ieee80211_channel dpd_5g_ch_list_bw80[] = {
++       CHAN5G(42, 5210),
++       CHAN5G(58, 5290),
++       CHAN5G(106, 5530),
++       CHAN5G(122, 5610),
++       CHAN5G(138, 5690),
++       CHAN5G(155, 5775),
++       CHAN5G(171, 5855)
++};
++
++const struct ieee80211_channel dpd_5g_skip_ch_list[] = {
++	CHAN5G(68, 5340),
++	CHAN5G(72, 5360),
++	CHAN5G(76, 5380),
++	CHAN5G(80, 5400),
++	CHAN5G(84, 5420),
++	CHAN5G(88, 5440),
++	CHAN5G(92, 5460),
++	CHAN5G(96, 5480)
++};
++
++const struct ieee80211_channel dpd_5g_ch_list_bw160[] = {
++	CHAN5G(50, 5250),
++	CHAN5G(114, 5570),
++	CHAN5G(163, 5815)
++};
++
++const struct ieee80211_channel dpd_6g_ch_list_bw80[] = {
++       CHAN6G(7, 5985),
++       CHAN6G(23, 6065),
++       CHAN6G(39, 6145),
++       CHAN6G(55, 6225),
++       CHAN6G(71, 6305),
++       CHAN6G(87, 6385),
++       CHAN6G(103, 6465),
++       CHAN6G(119, 6545),
++       CHAN6G(135, 6625),
++       CHAN6G(151, 6705),
++       CHAN6G(167, 6785),
++       CHAN6G(183, 6865),
++       CHAN6G(199, 6945),
++       CHAN6G(215, 7025)
++};
++
++const struct ieee80211_channel dpd_6g_ch_list_bw160[] = {
++	CHAN6G(15, 6025),
++	CHAN6G(47, 6185),
++	CHAN6G(79, 6345),
++	CHAN6G(111, 6505),
++	CHAN6G(143, 6665),
++	CHAN6G(175, 6825),
++	CHAN6G(207, 6985)
++};
++
++const struct ieee80211_channel dpd_6g_ch_list_bw320[] = {
++	CHAN6G(31, 6105),
++	CHAN6G(63, 6265),
++	CHAN6G(95, 6425),
++	CHAN6G(127, 6585),
++	CHAN6G(159, 6745),
++	CHAN6G(191, 6905)
++};
++
++const u32 dpd_2g_bw20_ch_num = ARRAY_SIZE(dpd_2g_ch_list_bw20);
++const u32 dpd_5g_skip_ch_num = ARRAY_SIZE(dpd_5g_skip_ch_list);
++const u32 dpd_5g_bw160_ch_num = ARRAY_SIZE(dpd_5g_ch_list_bw160);
++const u32 dpd_6g_bw160_ch_num = ARRAY_SIZE(dpd_6g_ch_list_bw160);
++const u32 dpd_6g_bw320_ch_num = ARRAY_SIZE(dpd_6g_ch_list_bw320);
++
+ static int mt7996_check_eeprom(struct mt7996_dev *dev)
+ {
+ 	u8 *eeprom = dev->mt76.eeprom.data;
+@@ -27,10 +103,17 @@ static int mt7996_check_eeprom(struct mt7996_dev *dev)
+ 	}
+ }
+ 
+-static char *mt7996_eeprom_name(struct mt7996_dev *dev)
++const char *mt7996_eeprom_name(struct mt7996_dev *dev)
+ {
+-	if (dev->testmode_enable)
+-		return MT7996_EEPROM_DEFAULT_TM;
++	if (dev->bin_file_mode)
++		return dev->mt76.bin_file_name;
++
++	//if (dev->testmode_enable) {
++	//	if (is_mt7992(&dev->mt76))
++	//		return MT7992_EEPROM_DEFAULT_TM;
++	//	else
++	//		return MT7996_EEPROM_DEFAULT_TM;
++	//}
+ 
+ 	switch (mt76_chip(&dev->mt76)) {
+ 	case 0x7990:
+@@ -54,7 +137,10 @@ mt7996_eeprom_load_default(struct mt7996_dev *dev)
+ 		return ret;
+ 
+ 	if (!fw || !fw->data) {
+-		dev_err(dev->mt76.dev, "Invalid default bin\n");
++		if (dev->bin_file_mode)
++			dev_err(dev->mt76.dev, "Invalid bin (bin file mode)\n");
++		else
++			dev_err(dev->mt76.dev, "Invalid default bin\n");
+ 		ret = -EINVAL;
+ 		goto out;
+ 	}
+@@ -93,15 +179,52 @@ int mt7996_eeprom_check_fw_mode(struct mt7996_dev *dev)
+ 	return ret;
+ }
+ 
++static int mt7996_eeprom_load_flash(struct mt7996_dev *dev)
++{
++	int ret = 1;
++
++	/* return > 0 for load success, return 0 for load failed, return < 0 for non memory */
++	dev->bin_file_mode = mt76_check_bin_file_mode(&dev->mt76);
++	if (dev->bin_file_mode) {
++		dev_err(dev->mt76.dev, "eeprom-load-flash, bin_file_mode is true\n");
++		dev->mt76.eeprom.size = MT7996_EEPROM_SIZE;
++		dev->mt76.eeprom.data = devm_kzalloc(dev->mt76.dev, dev->mt76.eeprom.size,
++						     GFP_KERNEL);
++		if (!dev->mt76.eeprom.data)
++			return -ENOMEM;
++
++		if (mt7996_eeprom_load_default(dev))
++			return 0;
++
++		if (mt7996_check_eeprom(dev))
++			return 0;
++	} else {
++		dev_err(dev->mt76.dev, "eeprom-load-flash, bin_file_mode is false\n");
++		ret = mt76_eeprom_init(&dev->mt76, MT7996_EEPROM_SIZE);
++	}
++
++	return ret;
++}
++
+ static int mt7996_eeprom_load(struct mt7996_dev *dev)
+ {
+ 	int ret;
+-	u8 free_block_num;
+-	u32 block_num, i;
+ 	u32 eeprom_blk_size = MT7996_EEPROM_BLOCK_SIZE;
+ 
++	ret = mt7996_eeprom_load_flash(dev);
++	if (ret < 0)
++		return ret;
++
++	if (ret) {
++		dev->flash_mode = true;
++		dev->eeprom_mode = dev->bin_file_mode ? BIN_FILE_MODE : FLASH_MODE;
++	}
++
+ 	/* flash or bin file mode eeprom is loaded before mcu init */
+ 	if (!dev->flash_mode) {
++		u8 free_block_num;
++		u32 block_num, i;
++
+ 		ret = mt7996_mcu_get_eeprom_free_block(dev, &free_block_num);
+ 		if (ret < 0)
+ 			return ret;
+@@ -118,6 +241,7 @@ static int mt7996_eeprom_load(struct mt7996_dev *dev)
+ 			if (ret < 0 && ret != -EINVAL)
+ 				return ret;
+ 		}
++		dev->eeprom_mode = EFUSE_MODE;
+ 	}
+ 
+ 	return mt7996_check_eeprom(dev);
+@@ -243,6 +367,92 @@ int mt7996_eeprom_parse_hw_cap(struct mt7996_dev *dev, struct mt7996_phy *phy)
+ 	return mt7996_eeprom_parse_band_config(phy);
+ }
+ 
++static int
++mt7996_eeprom_load_precal_binfile(struct mt7996_dev *dev, u32 offs, u32 size)
++{
++	const struct firmware *fw = NULL;
++	int ret;
++
++	ret = request_firmware(&fw, dev->mt76.bin_file_name, dev->mt76.dev);
++	if (ret)
++		return ret;
++
++	if (!fw || !fw->data) {
++		dev_err(dev->mt76.dev, "Invalid bin (bin file mode), load precal fail\n");
++		ret = -EINVAL;
++		goto out;
++	}
++
++	memcpy(dev->cal, fw->data + offs, size);
++
++out:
++	release_firmware(fw);
++
++	return ret;
++}
++
++static void mt7996_eeprom_init_precal(struct mt7996_dev *dev)
++{
++#define MT76_CHANNELS_5GHZ_SIZE                36      /* ARRAY_SIZE(mt76_channels_5ghz) */
++#define MT76_CHANNELS_6GHZ_SIZE                59      /* ARRAY_SIZE(mt76_channels_6ghz) */
++
++       dev->prek.dpd_ch_num[DPD_CH_NUM_BW20_2G] = ARRAY_SIZE(dpd_2g_ch_list_bw20);
++       dev->prek.dpd_ch_num[DPD_CH_NUM_BW20_5G_SKIP] = ARRAY_SIZE(dpd_5g_skip_ch_list);
++       dev->prek.dpd_ch_num[DPD_CH_NUM_BW20_5G] = MT76_CHANNELS_5GHZ_SIZE -
++                                                  DPD_CH_NUM(BW20_5G_SKIP);
++       dev->prek.dpd_ch_num[DPD_CH_NUM_BW160_5G] = ARRAY_SIZE(dpd_5g_ch_list_bw160);
++       dev->prek.dpd_ch_num[DPD_CH_NUM_BW20_6G] = MT76_CHANNELS_6GHZ_SIZE;
++       dev->prek.dpd_ch_num[DPD_CH_NUM_BW160_6G] = ARRAY_SIZE(dpd_6g_ch_list_bw160);
++
++       switch (mt76_chip(&dev->mt76)) {
++       case 0x7990:
++               dev->prek.rev = mt7996_prek_rev;
++               /* 5g & 6g bw 80 dpd channel list is not used */
++               dev->prek.dpd_ch_num[DPD_CH_NUM_BW320_6G] = ARRAY_SIZE(dpd_6g_ch_list_bw320);
++               break;
++       case 0x7992:
++               dev->prek.rev  = mt7992_prek_rev;
++               dev->prek.dpd_ch_num[DPD_CH_NUM_BW80_5G] = ARRAY_SIZE(dpd_5g_ch_list_bw80);
++               /* 6g is not used in current sku */
++               dev->prek.dpd_ch_num[DPD_CH_NUM_BW20_6G] = 0;
++               dev->prek.dpd_ch_num[DPD_CH_NUM_BW80_6G] = 0;
++               dev->prek.dpd_ch_num[DPD_CH_NUM_BW160_6G] = 0;
++               break;
++       default:
++               dev->prek.rev  = mt7996_prek_rev;
++               break;
++       }
++}
++
++static int mt7996_eeprom_load_precal(struct mt7996_dev *dev)
++{
++	struct mt76_dev *mdev = &dev->mt76;
++	u8 *eeprom = mdev->eeprom.data;
++	u32 offs = MT_EE_DO_PRE_CAL;
++	u32 size, val = eeprom[offs];
++	int ret;
++
++	mt7996_eeprom_init_precal(dev);
++
++	if (!dev->flash_mode || !val)
++		return 0;
++
++	size = MT_EE_CAL_GROUP_SIZE + MT_EE_CAL_DPD_SIZE;
++
++	dev->cal = devm_kzalloc(mdev->dev, size, GFP_KERNEL);
++	if (!dev->cal)
++		return -ENOMEM;
++
++	if (dev->bin_file_mode)
++		return mt7996_eeprom_load_precal_binfile(dev, MT_EE_PRECAL, size);
++
++	ret = mt76_get_of_data_from_mtd(mdev, dev->cal, offs, size);
++	if (!ret)
++		return ret;
++
++	return mt76_get_of_data_from_nvmem(mdev, dev->cal, "precal", size);
++}
++
+ int mt7996_eeprom_init(struct mt7996_dev *dev)
+ {
+ 	int ret;
+@@ -253,6 +463,8 @@ int mt7996_eeprom_init(struct mt7996_dev *dev)
+ 			return ret;
+ 
+ 		dev_warn(dev->mt76.dev, "eeprom load fail, use default bin\n");
++		dev->bin_file_mode = false;
++		dev->eeprom_mode = DEFAULT_BIN_MODE;
+ 		ret = mt7996_eeprom_load_default(dev);
+ 		if (ret)
+ 			return ret;
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.h b/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.h
+index 343e65e18d1f..a81147d881b6 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.h
++++ b/drivers/net/wireless/mediatek/mt76/mt7996/eeprom.h
+@@ -14,6 +14,7 @@ enum mt7996_eeprom_field {
+ 	MT_EE_MAC_ADDR =	0x004,
+ 	MT_EE_MAC_ADDR2 =	0x00a,
+ 	MT_EE_WIFI_CONF =	0x190,
++	MT_EE_DO_PRE_CAL =      0x1a5,
+ 	MT_EE_TESTMODE_EN =	0x1af,
+ 	MT_EE_MAC_ADDR3 =	0x2c0,
+ 	MT_EE_RATE_DELTA_2G =	0x1400,
+@@ -24,12 +25,94 @@ enum mt7996_eeprom_field {
+ 	MT_EE_TX0_POWER_6G =	0x1310,
+ 
+ 	__MT_EE_MAX =	0x1dff,
++	/* 0x1e10 ~ 0x2d644 used to save group cal data */
++	MT_EE_PRECAL =          0x1e10,
+ };
+ 
+ #define MT_EE_WIFI_CONF0_TX_PATH		GENMASK(2, 0)
+ #define MT_EE_WIFI_CONF0_BAND_SEL		GENMASK(2, 0)
+ #define MT_EE_WIFI_CONF1_BAND_SEL		GENMASK(5, 3)
+ #define MT_EE_WIFI_CONF2_BAND_SEL		GENMASK(2, 0)
++#define MT_EE_WIFI_PA_LNA_CONFIG               GENMASK(1, 0)
++        
++#define MT_EE_WIFI_CAL_GROUP_2G                        BIT(0)
++#define MT_EE_WIFI_CAL_GROUP_5G                        BIT(1)
++#define MT_EE_WIFI_CAL_GROUP_6G                        BIT(2)
++#define MT_EE_WIFI_CAL_GROUP                   GENMASK(2, 0)
++#define MT_EE_WIFI_CAL_DPD_2G                  BIT(3)
++#define MT_EE_WIFI_CAL_DPD_5G                  BIT(4)
++#define MT_EE_WIFI_CAL_DPD_6G                  BIT(5)
++#define MT_EE_WIFI_CAL_DPD                     GENMASK(5, 3)
++
++#define MT_EE_CAL_UNIT                         1024
++
++enum mt7996_prek_rev {
++       GROUP_SIZE_2G,
++       GROUP_SIZE_5G,
++       GROUP_SIZE_6G,
++       ADCDCOC_SIZE_2G,
++       ADCDCOC_SIZE_5G,
++       ADCDCOC_SIZE_6G,
++       DPD_LEGACY_SIZE,
++       DPD_MEM_SIZE,
++       DPD_OTFG0_SIZE,
++};
++
++static const u32 mt7996_prek_rev[] = {
++       [GROUP_SIZE_2G] =                       4 * MT_EE_CAL_UNIT,
++       [GROUP_SIZE_5G] =                       45 * MT_EE_CAL_UNIT,
++       [GROUP_SIZE_6G] =                       125 * MT_EE_CAL_UNIT,
++       [ADCDCOC_SIZE_2G] =                     4 * 4,
++       [ADCDCOC_SIZE_5G] =                     4 * 4,
++       [ADCDCOC_SIZE_6G] =                     4 * 5,
++       [DPD_LEGACY_SIZE] =                     4 * MT_EE_CAL_UNIT,
++       [DPD_MEM_SIZE] =                        13 * MT_EE_CAL_UNIT,
++       [DPD_OTFG0_SIZE] =                      2 * MT_EE_CAL_UNIT,
++};
++
++/* kite 2/5g config */
++static const u32 mt7992_prek_rev[] = {
++       [GROUP_SIZE_2G] =                       4 * MT_EE_CAL_UNIT,
++       [GROUP_SIZE_5G] =                       110 * MT_EE_CAL_UNIT,
++       [GROUP_SIZE_6G] =                       0,
++       [ADCDCOC_SIZE_2G] =                     4 * 4,
++       [ADCDCOC_SIZE_5G] =                     4 * 5,
++       [ADCDCOC_SIZE_6G] =                     0,
++       [DPD_LEGACY_SIZE] =                     5 * MT_EE_CAL_UNIT,
++       [DPD_MEM_SIZE] =                        16 * MT_EE_CAL_UNIT,
++       [DPD_OTFG0_SIZE] =                      2 * MT_EE_CAL_UNIT,
++};
++
++extern const struct ieee80211_channel dpd_2g_ch_list_bw20[];
++extern const struct ieee80211_channel dpd_5g_skip_ch_list[];
++extern const struct ieee80211_channel dpd_5g_ch_list_bw160[];
++extern const struct ieee80211_channel dpd_6g_ch_list_bw160[];
++extern const struct ieee80211_channel dpd_6g_ch_list_bw320[];
++
++#define PREK(id)                               (dev->prek.rev[(id)])
++#define DPD_CH_NUM(_type)                      (dev->prek.dpd_ch_num[DPD_CH_NUM_##_type])
++#define MT_EE_CAL_GROUP_SIZE                   (PREK(GROUP_SIZE_2G) + PREK(GROUP_SIZE_5G) + \
++                                                PREK(GROUP_SIZE_6G) + PREK(ADCDCOC_SIZE_2G) + \
++                                                PREK(ADCDCOC_SIZE_5G) + PREK(ADCDCOC_SIZE_6G))
++#define DPD_PER_CH_BW20_SIZE                   (PREK(DPD_LEGACY_SIZE) + PREK(DPD_OTFG0_SIZE))
++#define DPD_PER_CH_GT_BW20_SIZE                        (PREK(DPD_MEM_SIZE) + PREK(DPD_OTFG0_SIZE))
++#define MT_EE_CAL_DPD_SIZE_2G                  (DPD_CH_NUM(BW20_2G) * DPD_PER_CH_BW20_SIZE)
++#define MT_EE_CAL_DPD_SIZE_5G                  (DPD_CH_NUM(BW20_5G) * DPD_PER_CH_BW20_SIZE + \
++                                                DPD_CH_NUM(BW80_5G) * DPD_PER_CH_GT_BW20_SIZE + \
++                                                DPD_CH_NUM(BW160_5G) * DPD_PER_CH_GT_BW20_SIZE)
++#define MT_EE_CAL_DPD_SIZE_6G                  (DPD_CH_NUM(BW20_6G) * DPD_PER_CH_BW20_SIZE + \
++                                                DPD_CH_NUM(BW80_6G) * DPD_PER_CH_GT_BW20_SIZE + \
++                                                DPD_CH_NUM(BW160_6G) * DPD_PER_CH_GT_BW20_SIZE + \
++                                                DPD_CH_NUM(BW320_6G) * DPD_PER_CH_GT_BW20_SIZE)
++#define MT_EE_CAL_DPD_SIZE                     (MT_EE_CAL_DPD_SIZE_2G + MT_EE_CAL_DPD_SIZE_5G + \
++                                                MT_EE_CAL_DPD_SIZE_6G)
++
++#define RF_DPD_FLAT_CAL                                BIT(28)
++#define RF_PRE_CAL                             BIT(29)
++#define RF_DPD_FLAT_5G_CAL                     GENMASK(29, 28)
++#define RF_DPD_FLAT_5G_MEM_CAL                 (BIT(30) | BIT(28))
++#define RF_DPD_FLAT_6G_CAL                     GENMASK(30, 28)
++#define RF_DPD_FLAT_6G_MEM_CAL                 (BIT(31) | BIT(28))
+ 
+ #define MT_EE_WIFI_CONF1_TX_PATH_BAND0		GENMASK(5, 3)
+ #define MT_EE_WIFI_CONF2_TX_PATH_BAND1		GENMASK(2, 0)
+@@ -52,6 +135,13 @@ enum mt7996_eeprom_band {
+ 	MT_EE_BAND_SEL_6GHZ,
+ };
+ 
++enum mt7915_eeprom_mode {
++	DEFAULT_BIN_MODE,
++	EFUSE_MODE,
++	FLASH_MODE,
++	BIN_FILE_MODE,
++};
++
+ static inline int
+ mt7996_get_channel_group_5g(int channel)
+ {
+diff --git a/drivers/net/wireless/mediatek/mt76/mt7996/mt7996.h b/drivers/net/wireless/mediatek/mt76/mt7996/mt7996.h
+index 0d47368ae895..596493e35c18 100644
+--- a/drivers/net/wireless/mediatek/mt76/mt7996/mt7996.h
++++ b/drivers/net/wireless/mediatek/mt76/mt7996/mt7996.h
+@@ -45,6 +45,10 @@
+ #define MT7996_EEPROM_DEFAULT		"mediatek/mt7996/mt7996_eeprom.bin"
+ #define MT7992_EEPROM_DEFAULT		"mediatek/mt7996/mt7992_eeprom.bin"
+ #define MT7996_EEPROM_DEFAULT_TM	"mediatek/mt7996/mt7996_eeprom_tm.bin"
++#define MT7992_EEPROM_DEFAULT_24	"mediatek/mt7996/mt7992_eeprom_24_2i5i.bin"
++#define MT7992_EEPROM_DEFAULT_23	"mediatek/mt7996/mt7992_eeprom_23_2i5i.bin"
++#define MT7992_EEPROM_DEFAULT_23_EXT	"mediatek/mt7996/mt7992_eeprom_23_2e5e.bin"
++
+ #define MT7996_EEPROM_SIZE		7680
+ #define MT7996_EEPROM_BLOCK_SIZE	16
+ #define MT7996_TOKEN_SIZE		16384
+@@ -148,6 +152,19 @@ struct mt7996_twt_flow {
+ 
+ DECLARE_EWMA(avg_signal, 10, 8)
+ 
++enum mt7996_dpd_ch_num {
++	DPD_CH_NUM_BW20_2G,
++	DPD_CH_NUM_BW20_5G,
++	DPD_CH_NUM_BW20_5G_SKIP,
++	DPD_CH_NUM_BW80_5G,
++	DPD_CH_NUM_BW160_5G,
++	DPD_CH_NUM_BW20_6G,
++	DPD_CH_NUM_BW80_6G,
++	DPD_CH_NUM_BW160_6G,
++	DPD_CH_NUM_BW320_6G,
++	DPD_CH_NUM_TYPE_MAX,
++};
++
+ struct mt7996_sta {
+ 	struct mt76_wcid wcid; /* must be first */
+ 
+@@ -345,6 +362,9 @@ struct mt7996_dev {
+ 
+ 	bool testmode_enable;
+ 
++	bool bin_file_mode;
++	u8 eeprom_mode;
++
+ 	bool ibf;
+ 	u8 fw_debug_wm;
+ 	u8 fw_debug_wa;
+@@ -354,6 +374,14 @@ struct mt7996_dev {
+ 	struct dentry *debugfs_dir;
+ 	struct rchan *relay_fwlog;
+ 
++	void *cal;
++	u32 cur_prek_offset;
++
++	struct {
++		const u32 *rev;
++		u8 dpd_ch_num[DPD_CH_NUM_TYPE_MAX];
++	} prek;
++
+ 	struct {
+ 		u16 table_mask;
+ 		u8 n_agrt;
+@@ -458,6 +486,7 @@ irqreturn_t mt7996_irq_handler(int irq, void *dev_instance);
+ u64 __mt7996_get_tsf(struct ieee80211_hw *hw, struct mt7996_vif *mvif);
+ int mt7996_register_device(struct mt7996_dev *dev);
+ void mt7996_unregister_device(struct mt7996_dev *dev);
++const char *mt7996_eeprom_name(struct mt7996_dev *dev);
+ int mt7996_eeprom_init(struct mt7996_dev *dev);
+ int mt7996_eeprom_check_fw_mode(struct mt7996_dev *dev);
+ int mt7996_eeprom_parse_hw_cap(struct mt7996_dev *dev, struct mt7996_phy *phy);
