@@ -203,7 +203,7 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (conn->mode < IEEE80211_CONN_MODE_EHT) {
-		if (!ieee80211_chandef_he_6ghz_oper(local, &he._oper,
+		if (!ieee80211_chandef_he_6ghz_oper(sdata, local, &he._oper,
 						    NULL, chandef))
 			chandef->chan = NULL;
 	} else {
@@ -212,7 +212,7 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 		eht._oper_info.ccfs0 = he._6ghz_oper.ccfs0;
 		eht._oper_info.ccfs1 = he._6ghz_oper.ccfs1;
 
-		if (!ieee80211_chandef_he_6ghz_oper(local, &he._oper,
+		if (!ieee80211_chandef_he_6ghz_oper(sdata, local, &he._oper,
 						    &eht._oper, chandef))
 			chandef->chan = NULL;
 	}

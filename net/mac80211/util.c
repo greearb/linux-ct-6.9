@@ -3197,7 +3197,8 @@ void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 	}
 }
 
-bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
+bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_local *local,
 				    const struct ieee80211_he_operation *he_oper,
 				    const struct ieee80211_eht_operation *eht_oper,
 				    struct cfg80211_chan_def *chandef)
@@ -3209,12 +3210,16 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
 	if (chandef->chan->band != NL80211_BAND_6GHZ)
 		return true;
 
-	if (!he_oper)
+	if (!he_oper) {
+		sdata_info(sdata, "bad HE/EHT 6 GHz operation, he_oper is NULL\n");
 		return false;
+	}
 
 	he_6ghz_oper = ieee80211_he_6ghz_oper(he_oper);
-	if (!he_6ghz_oper)
+	if (!he_6ghz_oper) {
+		sdata_info(sdata, "bad HE/EHT 6 GHz operation, he_6ghz_oper is NULL\n");
 		return false;
+	}
 
 	/*
 	 * The EHT operation IE does not contain the primary channel so the
@@ -3225,8 +3230,10 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
 					      NL80211_BAND_6GHZ);
 	he_chandef.chan = ieee80211_get_channel(local->hw.wiphy, freq);
 
-	if (!he_chandef.chan)
+	if (!he_chandef.chan) {
+		sdata_info(sdata, "bad HE/EHT 6 GHz operation, he_chandef.chan is NULL\n");
 		return false;
+	}
 
 	if (!eht_oper ||
 	    !(eht_oper->params & IEEE80211_EHT_OPER_INFO_PRESENT)) {
@@ -3269,8 +3276,10 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
 					   &he_chandef);
 	}
 
-	if (!cfg80211_chandef_valid(&he_chandef))
+	if (!cfg80211_chandef_valid(&he_chandef)) {
+		sdata_info(sdata, "bad HE/EHT 6 GHz operation, he_chandef is not valid\n");
 		return false;
+	}
 
 	*chandef = he_chandef;
 

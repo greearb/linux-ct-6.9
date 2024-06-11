@@ -216,7 +216,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			mode = IEEE80211_CONN_MODE_HE;
 		}
 
-		if (!ieee80211_chandef_he_6ghz_oper(sdata->local, he_oper,
+		if (!ieee80211_chandef_he_6ghz_oper(sdata, sdata->local, he_oper,
 						    eht_oper, chandef)) {
 			sdata_info(sdata, "bad HE/EHT 6 GHz operation\n");
 			return IEEE80211_CONN_MODE_LEGACY;
@@ -672,7 +672,7 @@ again:
 	case NL80211_BAND_6GHZ:
 		if (ap_mode < IEEE80211_CONN_MODE_HE) {
 			sdata_info(sdata,
-				   "Rejecting non-HE 6/7 GHz connection");
+				   "Rejecting non-HE 6/7 GHz connection, ap-mode: %d", ap_mode);
 			ret = -EINVAL;
 			goto free;
 		}

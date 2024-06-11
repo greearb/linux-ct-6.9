@@ -267,6 +267,7 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 {
 	u32 control_freq, oper_freq;
 	int oper_width, control_width;
+	int ret;
 
 	if (!chandef->chan) {
 		pr_err("chandef-valid:  chan is NULL\n");
@@ -302,8 +303,10 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 	case NL80211_CHAN_WIDTH_4:
 	case NL80211_CHAN_WIDTH_8:
 	case NL80211_CHAN_WIDTH_16:
-		if (chandef->chan->band != NL80211_BAND_S1GHZ)
+		if (chandef->chan->band != NL80211_BAND_S1GHZ) {
+			pr_err("chandef-valid, 1-16Mhz: not S1GHZ\n");
 			return false;
+		}
 
 		control_freq = ieee80211_channel_to_khz(chandef->chan);
 		oper_freq = ieee80211_chandef_to_khz(chandef);
@@ -338,8 +341,10 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 		}
 		break;
 	case NL80211_CHAN_WIDTH_80P80:
-		if (!chandef->center_freq2)
+		if (!chandef->center_freq2) {
+			pr_err("chandef-valid, 80P80 without centerfreq2\n");
 			return false;
+		}
 
 		/* adjacent is not allowed -- that's a 160 MHz channel */
 		if (chandef->center_freq1 - chandef->center_freq2 == 80 ||
@@ -350,8 +355,11 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 		}
 		break;
 	default:
-		if (chandef->center_freq2)
+		if (chandef->center_freq2) {
+			pr_err("chandef-valid, default width, center-freq2 is non-zero: %d\n",
+			       chandef->center_freq2);
 			return false;
+		}
 		break;
 	}
 
@@ -397,19 +405,27 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 			break;
 		fallthrough;
 	default:
+		pr_err("chandef-valid, un-supported width: %d\n", chandef->width);
 		return false;
 	}
 
 	/* channel 14 is only for IEEE 802.11b */
 	if (chandef->center_freq1 == 2484 &&
-	    chandef->width != NL80211_CHAN_WIDTH_20_NOHT)
+	    chandef->width != NL80211_CHAN_WIDTH_20_NOHT) {
+		pr_err("chandef-valid, ch 14 problem\n");
 		return false;
+	}
 
 	if (cfg80211_chandef_is_edmg(chandef) &&
-	    !cfg80211_edmg_chandef_valid(chandef))
+	    !cfg80211_edmg_chandef_valid(chandef)) {
+		pr_err("chandef-valid, edmg problem\n");
 		return false;
+	}
 
-	return valid_puncturing_bitmap(chandef);
+	ret = valid_puncturing_bitmap(chandef);
+	if (ret)
+		pr_err("chandef-valid, invalid puncturing bitmap\n");
+	return ret;
 }
 EXPORT_SYMBOL(cfg80211_chandef_valid);
 
