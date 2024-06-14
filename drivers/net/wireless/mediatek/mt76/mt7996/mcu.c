@@ -118,26 +118,42 @@ int mt7996_mcu_get_tx_power_info(struct mt7996_phy *phy, u8 category, void *even
 
 static bool ok_eht(struct ieee80211_sta *sta)
 {
+	struct mt7996_sta *msta = (struct mt7996_sta *)sta->drv_priv;
+	struct ieee80211_vif *vif = container_of((void *)msta->vif,
+						 struct ieee80211_vif, drv_priv);
 	return sta->deflink.eht_cap.has_eht &&
-		sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_EHT;
+		(sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_EHT ||
+		 vif->type != NL80211_IFTYPE_STATION);
 }
 
 static bool ok_he(struct ieee80211_sta *sta)
 {
+	struct mt7996_sta *msta = (struct mt7996_sta *)sta->drv_priv;
+	struct ieee80211_vif *vif = container_of((void *)msta->vif,
+						 struct ieee80211_vif, drv_priv);
 	return sta->deflink.he_cap.has_he &&
-		sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_HE;
+		(sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_HE ||
+		 vif->type != NL80211_IFTYPE_STATION);
 }
 
 static bool ok_vht(struct ieee80211_sta *sta)
 {
+	struct mt7996_sta *msta = (struct mt7996_sta *)sta->drv_priv;
+	struct ieee80211_vif *vif = container_of((void *)msta->vif,
+						 struct ieee80211_vif, drv_priv);
 	return sta->deflink.vht_cap.vht_supported &&
-		sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_VHT;
+		(sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_VHT ||
+		 vif->type != NL80211_IFTYPE_STATION);
 }
 
 static bool ok_ht(struct ieee80211_sta *sta)
 {
+	struct mt7996_sta *msta = (struct mt7996_sta *)sta->drv_priv;
+	struct ieee80211_vif *vif = container_of((void *)msta->vif,
+						 struct ieee80211_vif, drv_priv);
 	return sta->deflink.ht_cap.ht_supported &&
-		sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_HT;
+		(sta->deflink.conn_settings.mode >= IEEE80211_CONN_MODE_HT ||
+		 vif->type != NL80211_IFTYPE_STATION);
 }
 
 static u8
