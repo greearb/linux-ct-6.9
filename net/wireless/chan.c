@@ -111,14 +111,19 @@ static bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef)
 		return true;
 
 	/* check if primary channel is punctured */
-	if (chandef->punctured & (u16)BIT((primary_center - start_freq) / 20))
+	if (chandef->punctured & (u16)BIT((primary_center - start_freq) / 20)) {
+		pr_err("chandef-invalid, punctured primary channel, punctured: 0x%x  pri-center: %d  start-freq: %d\n",
+		       chandef->punctured, primary_center, start_freq);
 		return false;
+	}
 
 	for (i = 0; i < per_bw_puncturing[idx].len; i++) {
 		if (per_bw_puncturing[idx].valid_values[i] == chandef->punctured)
 			return true;
 	}
 
+	pr_err("chandef-invalid, invalid puncture map, bw idx: %d punctured: 0x%x, primary-center: %d\n",
+	       idx, chandef->punctured, primary_center);
 	return false;
 }
 
@@ -423,8 +428,9 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 	}
 
 	ret = valid_puncturing_bitmap(chandef);
-	if (ret)
-		pr_err("chandef-valid, invalid puncturing bitmap\n");
+	if (!ret)
+		pr_err("chandef-valid, invalid puncturing bitmap, center_freq: %d/%d  width: %d  punctured: 0x%x\n",
+		       chandef->chan->center_freq, chandef->center_freq1, chandef->width, chandef->punctured);
 	return ret;
 }
 EXPORT_SYMBOL(cfg80211_chandef_valid);
